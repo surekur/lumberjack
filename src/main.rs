@@ -1,9 +1,10 @@
+
 use sdl2::ttf::Font;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
-use sdl2::render::WindowCanvas;
+//use sdl2::render::WindowCanvas;
 
 use std::os::unix;
 use fs::Metadata;
@@ -12,6 +13,7 @@ use std::fs;
 use std::rc::{Rc,Weak};
 
 use std::cell::RefCell;
+
 
 enum FSnode {
     DirLike(DirLike),
@@ -26,13 +28,14 @@ impl FSnode {
         sdl.draw_txt(name, pos, &font);
         pos.1 + 20
     }
-    fn open(&mut self) {
+    fn open(&mut self, list_view: &mut Vec<FSnode>, pos: usize) {
         match self {
-            Self::DirLike(d) => {d.open()},
-            Self::Leaf(f) => {println!("File Open")}, // TODO
+            Self::DirLike(d) => {d.open(list_view, pos)},
+            Self::Leaf(f) => {println!("File Open")}, // TODO implement XDG open
         }
     }
 }
+
 
 
 struct DirLike {
@@ -40,28 +43,31 @@ struct DirLike {
     path: String,
     //parrent: Option<&'p DirLike<'p,'p>>, // TODO: Use RefCell, Reference counter etc...
     meta: Metadata,
-    children: Vec<FSnode>,
+    //children: Vec<FSnode>,
     opened: bool,
+    indent: i32,
 }
 impl DirLike {
-    fn open(&mut self) {
+    fn open(&mut self, list_view: &mut Vec<FSnode>, pos: usize) {
         for file in fs::read_dir(&self.path).unwrap() {
             let file = file.unwrap();
             if file.file_type().unwrap().is_dir() {
-                self.children.push(FSnode::DirLike(DirLike{
+                list_view.insert(pos+1, FSnode::DirLike(DirLike{
                     name: file.file_name().into_string().unwrap(),
                     path: file.path().into_os_string().into_string().unwrap(),
                     meta: file.metadata().unwrap(),
                     //parrent: Some(& self),
-                    children: Vec::new(),
+                    //children: Vec::new(),
                     opened: false,
+                    indent: self.indent+1,
                 }));
             }
             else {
-                self.children.push(FSnode::Leaf(Leaf{
+                list_view.insert(pos+1, FSnode::Leaf(Leaf{
                     name: file.file_name().into_string().unwrap(),
                     path: file.path().into_os_string().into_string().unwrap(),
                     meta: file.metadata().unwrap(),
+                    indent: self.indent+1,
                 }));
             };
         }
@@ -70,11 +76,13 @@ impl DirLike {
     }
 }
 
+
 struct Leaf {
     name: String,
     //parrent: Option<&'a DirLike<'a>>,
     meta: Metadata,
     path: String,
+    indent: i32,
 }
 
 
@@ -83,6 +91,7 @@ struct Thumbnailable {
     //parrent: Option<&'a DirLike<'a>>,
     meta: Metadata,
     //thumbnail: 
+    indent: i32,
 }
 
 
@@ -106,33 +115,6 @@ impl SdlContainer {
 }
 
 
-fn render(mut sdl: &mut SdlContainer, font: &Font, tree: &mut DirLike) {
-    sdl.canvas.clear();
-
-    let mut drawpos = 0;
-    drawpos = draw_dir_entries(&mut sdl, font, tree, drawpos, 0);
-
-    sdl.canvas.present();
-}
-
-
-fn draw_dir_entries(mut sdl: &mut SdlContainer, font: &Font, dir: &DirLike, drawpos: i32, indentlevel: i32) -> i32 {
-    let mut drawpos = drawpos;
-    for entry in &dir.children {
-        entry.draw(&mut sdl, &font, (indentlevel*40, drawpos));
-        drawpos = drawpos + 20;
-        if let FSnode::DirLike(d) = entry {
-        if d.opened {drawpos = draw_dir_entries(&mut sdl, &font, d, drawpos, indentlevel+1);};
-        };
-    };
-    drawpos
-}
-
-//struct TtfContainer<'a> {
-//    font: Font<'a, 'a>,
-//    context: sdl2::ttf::Sdl2TtfContext,
-//}
-
 fn main() {
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
@@ -148,39 +130,39 @@ fn main() {
         .unwrap();
     let mut canvas = window.into_canvas().build().unwrap();
     canvas.set_draw_color(Color::RGB(20, 20, 20));
-    
     let mut sdl = SdlContainer {
         canvas: canvas,
         context: sdl_context,
     };
-    let root = "/";
-    //let mut listview: Vec<FSnode> = Vec::new();
-    let mut tree = DirLike {
-        name: "".to_string(),
-        path: root.to_string(),
-        meta: fs::metadata(&root).unwrap(),
-        opened: false,
-        children: Vec::new(),
-    };
-    tree.open();
-    //  TEST!
-    tree.children[2].open();    
-    // TEST ENDS
-    let mut viewpos = 0;
-    let mut cursorpos = 0;
-    //open_dir(root, &mut listview);
     let mut event_pump = sdl.context.event_pump().unwrap();
-    'mainloop : loop {
+
+    let root_path = "/";
+    let mut root_node = FSnode::DirLike(DirLike {name: String::from(""),
+                                                path: String::from(root_path),
+                                                indent: -1,
+                                                meta: fs::metadata(root_path).unwrap(),
+                                                opened: true,
+    });
+    let mut list_view: Vec<FSnode> = Vec::new();
+    root_node.open(&mut list_view, 0);
+
+    let cursorpos = 0;
+    let selection: Vec<isize>;
+
+    'main_loop : loop {
         let event = event_pump.wait_event();
         match event {
             Event::Quit {..} |
             Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
-                break 'mainloop;
+                break 'main_loop
             },
             _ => {}
         }
-        render(&mut sdl, &font, &mut tree);
+        sdl.canvas.clear();
+        let mut pos = 0;
+        for entry in &list_view {
+            pos = entry.draw(&mut sdl, &font, (0, pos));
+        }
     }
 }
-
 
