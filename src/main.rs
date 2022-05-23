@@ -12,7 +12,7 @@ use std::path::Path;
 use std::fs;
 
 use std::cell::RefCell;
-
+use sdl2::gfx::primitives::DrawRenderer;
 
 trait Manipulate {
     fn close(&mut self, list_view: &mut Vec<Box<FSnode>>, pos: usize) {}
@@ -124,7 +124,14 @@ impl Manipulate for DirLike {
 }
 impl Listable for DirLike {
     fn draw(&self, sdl: &mut SdlContainer, font: &Font, pos: (i32, i32)) -> i32 {
-        sdl.draw_txt(&self.name, (self.indent*40, pos.1), &font);
+        sdl.canvas.trigon(
+            pos.0+8, pos.1+2,
+                    pos.0+14, pos.1+10,
+            pos.0+8, pos.1+18,
+
+            Color::RGB(255,255,255)
+            );
+        sdl.draw_txt(&self.name, (self.indent*40+pos.0+20, pos.1), &font);
         pos.1 + 20
     }
 }
