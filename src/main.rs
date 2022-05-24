@@ -13,7 +13,9 @@ use std::fs;
 use std::cell::RefCell;
 use sdl2::gfx::primitives::DrawRenderer;
 use std::env;
-use freedesktop_icons::lookup;
+use iconhandler::Icons;
+
+mod iconhandler;
 
 trait Manipulate {
     fn close(&mut self, list_view: &mut Vec<Box<FSnode>>, pos: usize) {}
@@ -234,6 +236,7 @@ fn main() {
     sdl.context.event()
         .unwrap()
         .register_custom_event::<BumpEvent>().unwrap();
+    let icons = Icons::new();
 
     let root_path = "/home/tesztenv";
     let mut root_node = FSnode::DirLike(DirLike {name: String::from(""),
