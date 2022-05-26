@@ -18,7 +18,7 @@ use iconhandler::Icons;
 mod iconhandler;
 
 trait Manipulate {
-    fn close(&mut self, list_view: &mut Vec<Box<FSnode>>, pos: usize) {}
+    fn close(&mut self, list_view: &mut Vec<FSnode>, pos: usize) {}
 }
 
 
@@ -28,12 +28,13 @@ trait Listable {
 }
 
 
+#[derive(Debug)]
 enum FSnode {
     DirLike(DirLike),
     Leaf(Leaf),
 }
 impl FSnode {
-    fn open(&mut self, list_view: &mut Vec<Box<FSnode>>, pos: usize) {
+    fn open(&mut self, list_view: &mut Vec<FSnode>, pos: usize) {
         match self {
             Self::DirLike(d) => {if !d.opened {d.open(list_view, pos)}},
             Self::Leaf(f) => {println!("File Open")}, // TODO implement XDG open
@@ -48,7 +49,7 @@ impl FSnode {
     }
 }
 impl Manipulate for FSnode {
-    fn close(&mut self, list_view: &mut Vec<Box<FSnode>>, pos: usize) {
+    fn close(&mut self, list_view: &mut Vec<FSnode>, pos: usize) {
         match self {
             Self::DirLike(d) => {if d.opened {d.close(list_view, pos);}},
             _ => {}
@@ -69,6 +70,7 @@ impl Listable for FSnode {
     }
 }
 
+#[derive(Debug)]
 struct DirLike {
     name: String,
     path: String,
@@ -79,11 +81,14 @@ struct DirLike {
     indent: i32,
 }
 impl DirLike {
-    fn open(&mut self, list_view: &mut Vec<Box<FSnode>>, pos: usize) {
+    fn open(&mut self, list_view: &mut Vec<FSnode>, pos: usize) {
+        self.opened = true; //TODO IMPORTANT investigate: why the opened = true
+                            //  not working sometimes if it is on the end of the
+                            //  function!
         for file in fs::read_dir(&self.path).unwrap() {
             let file = file.unwrap();
             let node = if file.file_type().unwrap().is_dir() {
-                Box::new(FSnode::DirLike(DirLike{
+                FSnode::DirLike(DirLike{
                     name: file.file_name().into_string().unwrap(),
                     path: file.path().into_os_string().into_string().unwrap(),
                     meta: file.metadata().unwrap(),
@@ -91,16 +96,16 @@ impl DirLike {
                     //children: Vec::new(),
                     opened: false,
                     indent: self.indent+1,
-                }))
+                })
             }
             else {
                 
-                Box::new(FSnode::Leaf(Leaf{
+                FSnode::Leaf(Leaf{
                     name: file.file_name().into_string().unwrap(),
                     path: file.path().into_os_string().into_string().unwrap(),
                     meta: file.metadata().unwrap(),
                     indent: self.indent+1,
-                }))
+                })
             };
             if pos+1 < list_view.len() {
                 list_view.insert(pos+1, node);
@@ -109,12 +114,15 @@ impl DirLike {
                 list_view.push(node);
             }
         }
+        dbg!(self.opened, &self);
+        dbg!("opened");
         self.opened = true;
+        dbg!(self.opened, &self);
 
     }
 }
 impl Manipulate for DirLike {
-    fn close(&mut self, list_view: &mut Vec<Box<FSnode>>, pos: usize) {
+    fn close(&mut self, list_view: &mut Vec<FSnode>, pos: usize) {
         let mut length = 0;
         let mut is_breaked = false;
         if pos+1 < list_view.len() {
@@ -156,6 +164,7 @@ impl Listable for DirLike {
 }
 
 
+#[derive(Debug)]
 struct Leaf {
     name: String,
     //parrent: Option<&'a DirLike<'a>>,
@@ -236,7 +245,7 @@ fn main() {
     sdl.context.event()
         .unwrap()
         .register_custom_event::<BumpEvent>().unwrap();
-    let icons = Icons::new();
+    let mut icons = Icons::new();
 
     let root_path = "/home/tesztenv";
     let mut root_node = FSnode::DirLike(DirLike {name: String::from(""),
@@ -245,9 +254,8 @@ fn main() {
                                                 meta: fs::metadata(root_path).unwrap(),
                                                 opened: false,
     });
-    let mut list_view: Vec<Box<FSnode>> = Vec::new();
+    let mut list_view: Vec<FSnode> = Vec::new();
     root_node.open(&mut list_view, 0);
-    dbg!(list_view.len());
     let mut cursorpos = 0;
     let mut viewpos = 0;
     let selection: Vec<isize>;
@@ -270,21 +278,35 @@ fn main() {
                 }
             }
             Event::KeyDown { keycode: Some(Keycode::Right), ..} => {
-                unsafe {
-                    let node = &mut list_view[cursorpos] as *mut Box<FSnode>;
-                    let node = &mut *node;
-                    node.open(&mut list_view, cursorpos);
-                }
+                let node = unsafe {
+                    let node = &mut list_view[cursorpos] as *mut FSnode;
+                    &mut *node
+                };
+                node.open(&mut list_view, cursorpos);
+                dbg!(node);
+                
             }
             Event::KeyDown { keycode: Some(Keycode::Left), ..} => {
                 unsafe {
-                    let node = &mut list_view[cursorpos] as *mut Box<FSnode>;
+                    let node = &mut list_view[cursorpos] as *mut FSnode;
                     let node = &mut *node;
                     node.close(&mut list_view, cursorpos);
                 }
             }
+            Event::KeyDown { keycode: Some(Keycode::Return), ..} => {
+                let (path, meta) = match &list_view[cursorpos] {
+                    FSnode::DirLike(d) => {dbg!(d);
+                        (&d.path, &d.meta)}
+                    FSnode::Leaf(f) => {(&f.path, &f.meta)}
+                };
+                dbg!("Lefut.");
+                let meta = meta;
+                let icon = icons.get_icon(Path::new(&path), meta);
+                
 
-            _ => {dbg!("Other event!", event);}
+            }
+
+            _ => {}//dbg!("Other event!", event);}
         }
         sdl.canvas.clear();
         let mut pos = 0;
@@ -297,7 +319,7 @@ fn main() {
                 breaked = true;
                 break;
             }
-            if i + viewpos == cursorpos { //TODO: Holly shit as i32
+            if i + viewpos == cursorpos {
                 sdl.canvas.set_draw_color(cursorcolor);
             } else if iseven {
                 sdl.canvas.set_draw_color(bg2);
