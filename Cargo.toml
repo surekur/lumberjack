@@ -13,5 +13,5 @@ xdg-mime = "0.3"
 [dependencies.sdl2]
 version = "0.35.0"
 default-features = false
-features = ["ttf", "gfx"]
+features = ["ttf", "gfx", "image"]
 
