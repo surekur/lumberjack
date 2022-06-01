@@ -7,14 +7,20 @@ use std::fs::Metadata;
 use crate::fsnodetypes::SdlContainer;
 use sdl2::render::Texture;
 use sdl2::image::{InitFlag, LoadTexture};
+use std::collections::HashMap;
 
-pub struct Icons<'a> {
+pub type TC = sdl2::render::TextureCreator<sdl2::video::WindowContext>;
+
+//#[derive(Debug)]
+pub struct Icons<'w> {
     pub theme: String,
     mimedb: SharedMimeInfo,
-    loaded: Vec<Texture<'a>>,
+    pub loaded: Vec<Texture<'w>>,
+    //texturecreator: TC,
+    mimesloaded: HashMap<String, usize>,
     //strorage: HashMap<String, >
 }
-impl Icons<'_> {
+impl<'w> Icons<'w> {
     pub fn new() -> Self { //TODO: other systems 
         let theme = Command::new("xfconf-query")
             .arg("-c")
@@ -32,6 +38,8 @@ impl Icons<'_> {
             theme: theme,
             mimedb: SharedMimeInfo::new(),
             loaded: Vec::new(),
+            mimesloaded: HashMap::new()
+            //texturecreator: sdl.canvas.get_
         }
     }
 
@@ -49,32 +57,41 @@ impl Icons<'_> {
         .to_owned()
     }
 
-    pub fn get_icon(&mut self, path: &Path, meta: &Metadata, sdl: &SdlContainer) -> isize {
+    pub fn get_icon(&mut self, path: &Path, meta: &Metadata, tc: &'w TC) -> usize {
         let guess = self.mimedb.guess_mime_type()
             .path(path)
             //.metadata(meta)
             .guess();
-        dbg!(&guess.mime_type());
-        let icon = self.mimedb.lookup_icon_names(guess.mime_type());
-        dbg!(&icon);
-        //(&icon[0]).to_owned()
-        let icon  = lookup(&icon[0])
-             .with_size(16)
-             .with_scale(1)
-             .with_theme(&self.theme)
-             .with_cache()
-             .find()
-             .expect("Can't find icon!");
-        dbg!(&icon);
-        3
+        let mime = guess.mime_type();
+        dbg!(&mime);
+        let mimesloaded = &mut self.mimesloaded as *mut HashMap<String, usize>; 
+        let mimesloaded = unsafe {&mut *mimesloaded};
+        let iconid = mimesloaded.entry(mime.to_string())
+            .or_insert({
+            
+            let icon = self.mimedb.lookup_icon_names(guess.mime_type());
+            dbg!(&icon);
+            //(&icon[0]).to_owned()
+            let icon  = lookup(&icon[0])
+                 .with_size(16)
+                 .with_scale(1)
+                 .with_theme(&self.theme)
+                 .with_cache()
+                 .find()
+                 .expect("Can't find icon!");
+            dbg!(&icon);
+            self.load(icon, tc)
+            });
+        *iconid
     }
 
 
-    fn load<'a>(&'a mut self, file:  PathBuf, sdl: &'a SdlContainer) -> isize {
-        let texture: Texture<'a> = sdl.texturecreator.load_texture(file)
+    fn load(&mut self, filename:  PathBuf, tc: &'w TC) -> usize {
+        let texture = tc.load_texture(&filename)
             .expect("Can't load icon.");
         self.loaded.push(texture);
-        3
+        println!("Icon loaded: {:?}", &filename);
+        self.loaded.len() - 1
     }
 }
 

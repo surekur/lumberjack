@@ -14,7 +14,8 @@ use std::cell::RefCell;
 use sdl2::gfx::primitives::DrawRenderer;
 use std::env;
 //use iconhandler::Icons;
-
+use crate::iconhandler::TC;
+use crate::iconhandler::Icons;
 
 pub trait Manipulate {
     fn close(&mut self, list_view: &mut Vec<FSnode>, pos: usize) {}
@@ -22,9 +23,9 @@ pub trait Manipulate {
 
 
 pub trait Listable {
-    fn draw(&self, sdl: &mut SdlContainer, font: &Font, pos: (i32, i32)) -> i32 ;
+    fn draw(&self, sdl: &mut SdlContainer, font: &Font, pos: (i32, i32), icons: &Icons) -> i32 ;
     fn get_height(&self) -> i32 {20}
-}   
+}
 
 
 #[derive(Debug)]
@@ -33,9 +34,9 @@ pub enum FSnode {
     Leaf(Leaf),
 }
 impl FSnode {
-    pub fn open(&mut self, list_view: &mut Vec<FSnode>, pos: usize) {
+    pub fn open<'w>(&mut self, list_view: &mut Vec<FSnode>, pos: usize, tc: &'w TC, iconhandler: &mut Icons<'w>) {
         match self {
-            Self::DirLike(d) => {if !d.opened {d.open(list_view, pos)}},
+            Self::DirLike(d) => {if !d.opened {d.open(list_view, pos, tc, iconhandler)}},
             Self::Leaf(f) => {println!("File Open")}, // TODO implement XDG open
         }
     }
@@ -56,10 +57,10 @@ impl Manipulate for FSnode {
     }
 }
 impl Listable for FSnode {
-    fn draw(&self, sdl: &mut SdlContainer, font:&Font, pos: (i32, i32)) -> i32 {
+    fn draw(&self, sdl: &mut SdlContainer, font:&Font, pos: (i32, i32), icons: &Icons) -> i32 {
         let pos = match self {
-            Self::DirLike(d) => {d.draw(sdl, font, pos)},
-            Self::Leaf(f) => {f.draw(sdl, font, pos)},
+            Self::DirLike(d) => {d.draw(sdl, font, pos, icons)},
+            Self::Leaf(f) => {f.draw(sdl, font, pos, icons)},
         };
         pos
     }
@@ -73,6 +74,7 @@ impl Listable for FSnode {
 pub struct DirLike {
     pub name: String,
     pub path: String,
+    pub icon: usize,
     //parrent: Option<&'p DirLike<'p,'p>>, // TODO: Use RefCell, Reference counter etc...
     pub meta: Metadata,
     //children: Vec<FSnode>,
@@ -80,17 +82,24 @@ pub struct DirLike {
     pub indent: i32,
 }
 impl DirLike {
-    pub fn open(&mut self, list_view: &mut Vec<FSnode>, pos: usize) {
+    pub fn open<'w>(&mut self, list_view: &mut Vec<FSnode>, pos: usize, tc: &'w TC, iconhandler: &mut Icons<'w>) {
         self.opened = true; //TODO IMPORTANT investigate: why the opened = true
                             //  not working sometimes if it is on the end of the
                             //  function!
         for file in fs::read_dir(&self.path).unwrap() {
             let file = file.unwrap();
+            let meta = file.metadata().unwrap();
+            let path = file.path().into_os_string().into_string().unwrap();
+            let icon = iconhandler.get_icon(file.path().as_path(), &meta, &tc);
+
             let node = if file.file_type().unwrap().is_dir() {
                 FSnode::DirLike(DirLike{
-                    name: file.file_name().into_string().unwrap(),
-                    path: file.path().into_os_string().into_string().unwrap(),
-                    meta: file.metadata().unwrap(),
+                    name: file.file_name()
+                        .into_string()
+                        .unwrap(), // TODO If filename isn't utf-8 encoded, then we panic, is it ok?
+                    path: path,
+                    icon: icon,
+                    meta: meta,
                     //parrent: Some(& self),
                     //children: Vec::new(),
                     opened: false,
@@ -101,14 +110,16 @@ impl DirLike {
                 
                 FSnode::Leaf(Leaf{
                     name: file.file_name().into_string().unwrap(),
-                    path: file.path().into_os_string().into_string().unwrap(),
-                    meta: file.metadata().unwrap(),
+                    path: path,
+                    meta: meta,
+                    icon: icon,
                     indent: self.indent+1,
                 })
             };
             if pos+1 < list_view.len() {
                 list_view.insert(pos+1, node);
-                // TODO optimize so dont need to shift for every single insertion but insert once!
+                // TODO future Gergo will optimize this
+                // so dont need to shift da shit for every single insertion but insert once!
             } else {
                 list_view.push(node);
             }
@@ -131,14 +142,18 @@ impl Manipulate for DirLike {
             if !is_breaked {
                 length = list_view.len()+1;
             }
+            dbg!(pos+1..pos+1+length);
             list_view.drain(pos+1..pos+1+length);
         }
         self.opened = false;
     }
 }
 impl Listable for DirLike {
-    fn draw(&self, sdl: &mut SdlContainer, font: &Font, pos: (i32, i32)) -> i32 {
-        let gpos = (pos.0 as i16, pos.1 as i16);
+    fn draw(&self, sdl: &mut SdlContainer, font: &Font, pos: (i32, i32), icons: &Icons) -> i32 {
+        sdl.canvas.copy(&icons.loaded[self.icon], None, Rect::new(self.indent*40+22, pos.1+2, 16, 16));
+        dbg!(&self);
+        dbg!(self.indent, self.indent*40);
+        let gpos = ((pos.0 as i16) + (self.indent as i16 *40), pos.1 as i16);
         if !self.opened {
             sdl.canvas.filled_trigon(
                 gpos.0+8, gpos.1+2,
@@ -154,7 +169,7 @@ impl Listable for DirLike {
                 Color::RGB(255,255,255)
             ).ok();
         }
-        sdl.draw_txt(&self.name, (self.indent*40+pos.0+20, pos.1), &font);
+        sdl.draw_txt(&self.name, (self.indent*40+pos.0+40, pos.1), &font);
         pos.1 + 20
     }
 }
@@ -164,13 +179,15 @@ impl Listable for DirLike {
 pub struct Leaf {
     pub name: String,
     //parrent: Option<&'a DirLike<'a>>,
-   pub meta: Metadata,
-   pub path: String,
-   pub indent: i32,
+    pub meta: Metadata,
+    pub path: String,
+    pub indent: i32,
+    pub icon: usize,
 }
 impl Listable for Leaf {
-    fn draw(&self, sdl: &mut SdlContainer, font: &Font, pos: (i32, i32)) -> i32 {
-        sdl.draw_txt(&self.name, (self.indent*40+20, pos.1), &font);
+    fn draw(&self, sdl: &mut SdlContainer, font: &Font, pos: (i32, i32), icons: &Icons) -> i32 {
+        sdl.canvas.copy(&icons.loaded[self.icon], None, Rect::new(self.indent*40+22, pos.1+2, 16, 16));
+        sdl.draw_txt(&self.name, (self.indent*40+40, pos.1), &font);
         pos.1 + 20
     }
 }
@@ -185,13 +202,12 @@ pub struct Thumbnailable {
 }
 
 
-pub struct SdlContainer<'a> {
+pub struct SdlContainer {
    pub canvas: sdl2::render::WindowCanvas,
    pub context: sdl2::Sdl,
    pub event_sender: sdl2::event::EventSender,
-   pub texturecreator: &'a sdl2::render::TextureCreator<sdl2::video::WindowContext>,
 }
-impl SdlContainer<'_> {
+impl SdlContainer {
     pub fn draw_txt(&mut self, txt: &str, pos: (i32, i32), font: &Font ) {
         let surf = font.render(txt)
             .blended(Color::RGB(255,255,255))

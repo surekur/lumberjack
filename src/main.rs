@@ -15,21 +15,23 @@ use sdl2::gfx::primitives::DrawRenderer;
 use std::env;
 use iconhandler::Icons;
 use crate::fsnodetypes::{SdlContainer, FSnode, DirLike, Leaf, Manipulate, Listable};
+use crate::iconhandler::TC;
 
 mod iconhandler;
 mod fsnodetypes;
-
+mod modality;
 
 struct BumpEvent {
 }
 
-fn draw_statusbar() {
+fn draw_statusbar(pos: usize, cursorpos: usize) {
+    
 
 }
 
 
 fn main() {
-    let root_path = "/home/tesztenv";
+    let root_path = "./";
     let bg1 = Color::RGB(20,20,20);
     let bg2 = Color::RGB(25,25,25);
     let cursorcolor = Color::RGB(0, 0, 140);
@@ -54,7 +56,6 @@ fn main() {
         canvas: canvas,
         context: sdl_context,
         event_sender: event_sender,
-        texturecreator: texturecreator,
     };
     let mut event_pump = sdl.context.event_pump().unwrap();
     sdl.context.event()
@@ -67,9 +68,10 @@ fn main() {
                                                 indent: -1,
                                                 meta: fs::metadata(root_path).unwrap(),
                                                 opened: false,
+                                                icon: 0,
     });
     let mut list_view: Vec<FSnode> = Vec::new();
-    root_node.open(&mut list_view, 0);
+    root_node.open(&mut list_view, 0, &texturecreator, &mut icons);
     let mut cursorpos = 0;
     let mut viewpos = 0;
     let selection: Vec<isize>;
@@ -96,7 +98,7 @@ fn main() {
                     let node = &mut list_view[cursorpos] as *mut FSnode;
                     &mut *node
                 };
-                node.open(&mut list_view, cursorpos);
+                node.open(&mut list_view, cursorpos, &texturecreator, &mut icons);
             }
             Event::KeyDown { keycode: Some(Keycode::Left), ..} => {
                 unsafe {
@@ -113,7 +115,7 @@ fn main() {
                 };
                 dbg!("Lefut.");
                 let meta = meta;
-                let icon = icons.get_icon(Path::new(&path), meta, &sdl);
+                let icon = icons.get_icon(Path::new(&path), meta, &texturecreator);
             }
 
             _ => {}//dbg!("Other event!", event);}
@@ -137,8 +139,11 @@ fn main() {
                 sdl.canvas.set_draw_color(bg1);
             }
             iseven = !iseven;
-            sdl.canvas.fill_rect(Some(Rect::new(0,pos,4000,4000))).expect("Jaj!");
-            pos = entry.draw(&mut sdl, &font, (0, pos));
+            sdl.canvas.fill_rect(Some(Rect::new(
+                        0, pos,
+                        sdl.canvas.window().drawable_size().0,entry.get_height() as u32)))
+                .expect("Bug in drawing the background!");
+            pos = entry.draw(&mut sdl, &font, (0, pos), &icons);
         }
         sdl.canvas.present();
         if breaked && (last_visible < cursorpos+1) {
