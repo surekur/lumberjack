@@ -11,14 +11,17 @@ use std::path::Path;
 use std::fs;
 
 use std::cell::RefCell;
+use std::rc::Rc;
 use sdl2::gfx::primitives::DrawRenderer;
 use std::env;
 //use iconhandler::Icons;
 use crate::iconhandler::TC;
 use crate::iconhandler::Icons;
 
+pub type ListView = Vec<Rc<RefCell<FSnode>>>;
+
 pub trait Manipulate {
-    fn close(&mut self, list_view: &mut Vec<FSnode>, pos: usize) {}
+    fn close(&mut self, _list_view: &mut ListView, _pos: usize) {}
 }
 
 
@@ -34,7 +37,7 @@ pub enum FSnode {
     Leaf(Leaf),
 }
 impl FSnode {
-    pub fn open<'w>(&mut self, list_view: &mut Vec<FSnode>, pos: usize, tc: &'w TC, iconhandler: &mut Icons<'w>) {
+    pub fn open<'w>(&mut self, list_view: &mut Vec<Rc<RefCell<FSnode>>>, pos: usize, tc: &'w TC, iconhandler: &mut Icons<'w>) {
         match self {
             Self::DirLike(d) => {if !d.opened {d.open(list_view, pos, tc, iconhandler)}},
             Self::Leaf(f) => {println!("File Open")}, // TODO implement XDG open
@@ -49,7 +52,7 @@ impl FSnode {
     }
 }
 impl Manipulate for FSnode {
-    fn close(&mut self, list_view: &mut Vec<FSnode>, pos: usize) {
+    fn close(&mut self, list_view: &mut Vec<Rc<RefCell<FSnode>>>, pos: usize) {
         match self {
             Self::DirLike(d) => {if d.opened {d.close(list_view, pos);}},
             _ => {}
@@ -77,12 +80,12 @@ pub struct DirLike {
     pub icon: usize,
     //parrent: Option<&'p DirLike<'p,'p>>, // TODO: Use RefCell, Reference counter etc...
     pub meta: Metadata,
-    //children: Vec<FSnode>,
+    //children: Vec<Rc<RefCell<FSnode>>>,
     pub opened: bool,
     pub indent: i32,
 }
 impl DirLike {
-    pub fn open<'w>(&mut self, list_view: &mut Vec<FSnode>, pos: usize, tc: &'w TC, iconhandler: &mut Icons<'w>) {
+    pub fn open<'w>(&mut self, list_view: &mut Vec<Rc<RefCell<FSnode>>>, pos: usize, tc: &'w TC, iconhandler: &mut Icons<'w>) {
         self.opened = true; //TODO IMPORTANT investigate: why the opened = true
                             //  not working sometimes if it is on the end of the
                             //  function!
@@ -116,6 +119,7 @@ impl DirLike {
                     indent: self.indent+1,
                 })
             };
+            let node = Rc::new(RefCell::new(node));
             if pos+1 < list_view.len() {
                 list_view.insert(pos+1, node);
                 // TODO future Gergo will optimize this
@@ -128,31 +132,34 @@ impl DirLike {
     }
 }
 impl Manipulate for DirLike {
-    fn close(&mut self, list_view: &mut Vec<FSnode>, pos: usize) {
-        let mut length = 0;
+    fn close(&mut self, list_view: &mut Vec<Rc<RefCell<FSnode>>>, pos: usize) {
+        let mut end = pos;
         let mut is_breaked = false;
         if pos+1 < list_view.len() {
             for (i, node) in list_view[pos+1..].iter().enumerate() {
-                if node.get_indent() <= self.indent {
-                    length = i;
+                if node.borrow().get_indent() <= self.indent {
+                    end += i+1;
                     is_breaked = true;
                     break
                 }
             }
             if !is_breaked {
-                length = list_view.len()+1;
+                end = list_view.len();
+                dbg!(!is_breaked, end);
             }
-            dbg!(pos+1..pos+1+length);
-            list_view.drain(pos+1..pos+1+length);
+            else {
+                //length += pos+1;
+            }
+            dbg!(pos+1..end);
+            list_view.drain(pos+1..end);
         }
         self.opened = false;
     }
 }
 impl Listable for DirLike {
     fn draw(&self, sdl: &mut SdlContainer, font: &Font, pos: (i32, i32), icons: &Icons) -> i32 {
-        sdl.canvas.copy(&icons.loaded[self.icon], None, Rect::new(self.indent*40+22, pos.1+2, 16, 16));
-        dbg!(&self);
-        dbg!(self.indent, self.indent*40);
+        sdl.canvas.copy(&icons.loaded[self.icon], None, 
+                        Rect::new(self.indent*40+22, pos.1+2, 16, 16)).ok();
         let gpos = ((pos.0 as i16) + (self.indent as i16 *40), pos.1 as i16);
         if !self.opened {
             sdl.canvas.filled_trigon(
@@ -186,7 +193,8 @@ pub struct Leaf {
 }
 impl Listable for Leaf {
     fn draw(&self, sdl: &mut SdlContainer, font: &Font, pos: (i32, i32), icons: &Icons) -> i32 {
-        sdl.canvas.copy(&icons.loaded[self.icon], None, Rect::new(self.indent*40+22, pos.1+2, 16, 16));
+        sdl.canvas.copy(&icons.loaded[self.icon], None, 
+                        Rect::new(self.indent*40+22, pos.1+2, 16, 16)).ok();
         sdl.draw_txt(&self.name, (self.indent*40+40, pos.1), &font);
         pos.1 + 20
     }

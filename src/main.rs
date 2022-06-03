@@ -11,15 +11,20 @@ use std::path::Path;
 use std::fs;
 
 use std::cell::RefCell;
+use std::rc::Rc;
 use sdl2::gfx::primitives::DrawRenderer;
 use std::env;
 use iconhandler::Icons;
 use crate::fsnodetypes::{SdlContainer, FSnode, DirLike, Leaf, Manipulate, Listable};
 use crate::iconhandler::TC;
+use crate::modality::{Mode, NormalMode};
 
 mod iconhandler;
 mod fsnodetypes;
 mod modality;
+
+
+pub type TextureCreator = sdl2::render::TextureCreator<sdl2::video::WindowContext>;
 
 struct BumpEvent {
 }
@@ -70,62 +75,30 @@ fn main() {
                                                 opened: false,
                                                 icon: 0,
     });
-    let mut list_view: Vec<FSnode> = Vec::new();
+    let mut list_view: Vec<Rc<RefCell<FSnode>>> = Vec::new();
     root_node.open(&mut list_view, 0, &texturecreator, &mut icons);
     let mut cursorpos = 0;
     let mut viewpos = 0;
+    let mut mode = Mode::Normal(NormalMode::new());
     let selection: Vec<isize>;
 
-    'main_loop : loop {
+    loop {
         let event = event_pump.wait_event();
-        match event {
-            Event::Quit {..} |
-            Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
-                break 'main_loop
-            },
-            Event::KeyDown { keycode: Some(Keycode::Up), ..} => {
-                if cursorpos > 0 {
-                    cursorpos -= 1;
-                }
-            }
-            Event::KeyDown { keycode: Some(Keycode::Down), ..} => {
-                if cursorpos < list_view.len()-1 {
-                    cursorpos += 1;
-                }
-            }
-            Event::KeyDown { keycode: Some(Keycode::Right), ..} => {
-                let node = unsafe {
-                    let node = &mut list_view[cursorpos] as *mut FSnode;
-                    &mut *node
-                };
-                node.open(&mut list_view, cursorpos, &texturecreator, &mut icons);
-            }
-            Event::KeyDown { keycode: Some(Keycode::Left), ..} => {
-                unsafe {
-                    let node = &mut list_view[cursorpos] as *mut FSnode;
-                    let node = &mut *node;
-                    node.close(&mut list_view, cursorpos);
-                }
-            }
-            Event::KeyDown { keycode: Some(Keycode::Return), ..} => {
-                let (path, meta) = match &list_view[cursorpos] {
-                    FSnode::DirLike(d) => {dbg!(d);
-                        (&d.path, &d.meta)}
-                    FSnode::Leaf(f) => {(&f.path, &f.meta)}
-                };
-                dbg!("Lefut.");
-                let meta = meta;
-                let icon = icons.get_icon(Path::new(&path), meta, &texturecreator);
-            }
+        if !match &mut mode {
+            Mode::Normal(m) => {m.handle_input(event, &mut cursorpos, &mut list_view,
+                                               &mut icons, &texturecreator)},
+            _ => {true},
 
-            _ => {}//dbg!("Other event!", event);}
         }
+        {break};
+        
         sdl.canvas.clear();
         let mut pos = 0;
         let mut iseven = false;
         let mut last_visible = viewpos;
         let mut breaked = false;
         for (i, entry) in list_view[viewpos..].iter().enumerate() {
+            let entry = entry.borrow_mut();
             if pos + entry.get_height() > (sdl.canvas.window().drawable_size().1 as i32) {
                 last_visible += i;
                 breaked = true;
@@ -142,19 +115,19 @@ fn main() {
             sdl.canvas.fill_rect(Some(Rect::new(
                         0, pos,
                         sdl.canvas.window().drawable_size().0,entry.get_height() as u32)))
-                .expect("Bug in drawing the background!");
+                .expect("Can't draw the background!");
             pos = entry.draw(&mut sdl, &font, (0, pos), &icons);
         }
         sdl.canvas.present();
         if breaked && (last_visible < cursorpos+1) {
             viewpos += 1;
             sdl.event_sender.push_custom_event(BumpEvent {})
-                .expect("Nem sikerült!");
+                .ok();
         }
         if viewpos > cursorpos {
             viewpos -= 1;
             sdl.event_sender.push_custom_event(BumpEvent {})
-                .expect("Nem sikerült!");
+                .ok();
         }
     }
 }
