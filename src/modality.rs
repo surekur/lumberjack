@@ -1,59 +1,259 @@
 use crate::FSnode;
 use sdl2::event::Event;
+use sdl2::pixels::Color;
 use sdl2::keyboard::Keycode;
 use crate::fsnodetypes::{ListView, Manipulate};
 use crate::iconhandler::Icons;
 use crate::TextureCreator;
+use crate::config::*;
+use crate::commands;
+use crate::commands::{ManipFun, TargetFun, TargetlessFun};
 
-trait ActMod {
+pub type CommandSeq = Vec<Command>;
+//pub type ModeInputHandler = 
 
-
+pub struct Mode<'a> {
+    pub name: String,
+    pub color: Color,
+    pub fgcolor: Color,
+    pub keysequence: Vec<Keycode>,
+    pub commandseq: Vec<Command>,
+    pub executedseq: Vec<Command>,
+    pub handle_input: fn(&mut Self , Event, cursorpos: &mut usize,
+                         &mut ListView, &mut Icons<'a>, &'a TextureCreator),
 }
-
-pub enum Mode {
-    Normal(NormalMode),
-    Visual(VisualMode),
-    Rebane(RenameMode),
-    Command(Command),
-}
-
-
-pub struct NormalMode {
-    name: String,
-    commandsequence: Vec<Command>,
-
-}
-impl NormalMode {
-    pub fn new() -> Self {
+impl Mode<'_> {
+    pub fn normal() -> Self {
         Self {
-            name: String::from("--NORMAL--"),
-            commandsequence: Vec::new(),
-            
+            name: String::from("NORMAL"),
+            color: Color::GREY,
+            fgcolor: BG0,
+            keysequence: Vec::new(),// TODO Made them arrays instead of vecs(?)
+            commandseq: Vec::new(),
+            executedseq: Vec::new(),
+            handle_input: Mode::NORMAL_handle_input,
         }
-
-
-    }
-    fn parsecommandsequance(commands: &str) -> Vec<Command> {
-        vec![]
     }
 
-    pub fn handle_input<'a>(&mut self, event: Event, cursorpos: &mut usize, list_view: &mut ListView, icons: &mut Icons<'a>,
-                    texturecreator: &'a TextureCreator) -> bool {
-        match event {
-            Event::Quit {..} |
-            Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
-                return false;
+    fn parse_commandsequance(commands: &Vec<Keycode>) -> Option<Vec<Command>> {
+        let mut commandseq = Vec::new();
+        let mut previusnum = String::new();
+        for key in commands {
+            let command = match key {
+                // TODO: thats kinda dump, I know...
+                // Should be replaced with something
+                // less naïve!
+                Keycode::Num0 => {
+                    if !previusnum.is_empty() {
+                        commandseq.pop();
+                    }
+                    previusnum.push('0');
+                    Command::Quantifyer(previusnum.parse().unwrap())
+                }
+                Keycode::Num1 => {
+                    if !previusnum.is_empty() {
+                        commandseq.pop();
+                    }
+                    previusnum.push('1');
+                    Command::Quantifyer(previusnum.parse().unwrap())
+                }
+                Keycode::Num2 => {
+                    if !previusnum.is_empty() {
+                        commandseq.pop();
+                    }
+                    previusnum.push('2');
+                    Command::Quantifyer(previusnum.parse().unwrap())
+                }
+                Keycode::Num3 => {
+                    if !previusnum.is_empty() {
+                        commandseq.pop();
+                    }
+                    previusnum.push('3');
+                    Command::Quantifyer(previusnum.parse().unwrap())
+                }
+                Keycode::Num4 => {
+                    if !previusnum.is_empty() {
+                        commandseq.pop();
+                    }
+                    previusnum.push('4');
+                    Command::Quantifyer(previusnum.parse().unwrap())
+                }
+                Keycode::Num5 => {
+                    if !previusnum.is_empty() {
+                        commandseq.pop();
+                    }
+                    previusnum.push('5');
+                    Command::Quantifyer(previusnum.parse().unwrap())
+                }
+                Keycode::Num6 => {
+                    if !previusnum.is_empty() {
+                        commandseq.pop();
+                    }
+                    previusnum.push('6');
+                    Command::Quantifyer(previusnum.parse().unwrap())
+                }
+                Keycode::Num7 => {
+                    if !previusnum.is_empty() {
+                        commandseq.pop();
+                    }
+                    previusnum.push('7');
+                    Command::Quantifyer(previusnum.parse().unwrap())
+                }
+                Keycode::Num8 => {
+                    if !previusnum.is_empty() {
+                        commandseq.pop();
+                    }
+                    previusnum.push('8');
+                    Command::Quantifyer(previusnum.parse().unwrap())
+                }
+                Keycode::Num9 => {
+                    if !previusnum.is_empty() {
+                        commandseq.pop();
+                    }
+                    previusnum.push('9');
+                    Command::Quantifyer(previusnum.parse().unwrap())
+                }
+                Keycode::Y => {
+                    previusnum.clear();
+                    Command::Manip{fun: commands::yank, name: String::from("yank")}
+                }
+                Keycode::P => {
+                    previusnum.clear();
+                    Command::Targetless{fun: commands::past, 
+                                    name: String::from("past")}
+                }
+                
+                Keycode::Up => {
+                    previusnum.clear();
+                    Command::Target{fun: commands::up, name: String::from("↑")}
+                }
+                Keycode::Down => {
+                    previusnum.clear();
+                    println!("DOWN");
+                    Command::Target{fun: commands::down, name: String::from("↓")}
+                }
+                _ => {return None}
+            };
+            commandseq.push(command);
+        }
+        Some(commandseq)
+    }
+
+    fn NORMAL_ExecCommanSeq(&self,mut list_view: &mut ListView,
+                            cursorpos: &mut usize) -> CommandSeqState {
+        println!("Exec()");
+        match self.commandseq[..] {
+            // Complette:
+            // TG
+            // Qn TG
+            // Mn Tg
+            // Mn Qn Tg
+            // Mn Mn
+            // Tl
+            // Qn Tl
+            [Command::Target{name: _, fun: tg}] => {
+                match tg(list_view, *cursorpos) {
+                    Some(t) => {*cursorpos = t;},
+                    None => {}
+                }
+                CommandSeqState::Complette
             },
-            Event::KeyDown { keycode: Some(Keycode::Up), ..} => {
-                if *cursorpos > 0 {
-                    *cursorpos -= 1;
+
+            [Command::Quantifyer(qf),
+            Command::Target{name: _, fun: tg}] => {
+                let mut target = *cursorpos;
+                for _ in 0..qf {
+                    if let Some(t) = tg(list_view, target) {
+                        target = t;
+                    }
                 }
-            }
-            Event::KeyDown { keycode: Some(Keycode::Down), ..} => {
-                if *cursorpos < list_view.len()-1 {
-                    *cursorpos += 1;
+                *cursorpos = target;
+                CommandSeqState::Complette
+            },
+
+            [Command::Manip{name: _, fun: mn},
+            Command::Target{name: _, fun: tg}] => {
+                let mut target = *cursorpos;
+                if let Some(t) = tg(list_view, *cursorpos) {
+                    target = t;
                 }
+                let (start, end) =
+                    if *cursorpos < target {(*cursorpos, target)}
+                    else                    {(target, *cursorpos)};
+               // for i in start..=end {
+               //     mn();
+               // }
+                mn((start..=end).collect() , &mut list_view);
+                CommandSeqState::Complette
+            },
+
+            [Command::Manip{name: _, fun: mn},
+            Command::Quantifyer(qf),
+            Command::Target{name: _, fun: tg}] => {
+                let mut target = *cursorpos;
+                for _ in 0..qf {
+                    if let Some(t) = tg(list_view, target) {
+                        target = t;
+                    }
+                }
+                let (start, end) =
+                    if *cursorpos < target {(*cursorpos, target)}
+                    else                    {(target, *cursorpos)};
+                mn((start..=end).collect() , &mut list_view);
+                CommandSeqState::Complette
+            },
+
+            [Command::Manip{name: _, fun: mn},
+            Command::Manip{name: _, fun: mn2}]
+                    if mn as *const ManipFun == mn2 as *const ManipFun => {
+                        mn(vec![*cursorpos], &mut list_view); 
+                        CommandSeqState::Complette
+                },
+            
+            [Command::Targetless{name: _, fun: tl}] => {
+                tl(&mut list_view, *cursorpos);
+                CommandSeqState::Complette},
+
+            [Command::Quantifyer(qf),
+            Command::Targetless{name: _, fun: tl}] => {
+                for _ in 0..=qf {
+                    tl(&mut list_view, *cursorpos);
+                }
+                CommandSeqState::Complette
             }
+
+            // Uncomplette:
+            [Command::Manip{name: _, fun: _}] => {CommandSeqState::Uncomplette},
+
+            [Command::Manip{name: _, fun: _},
+            Command::Quantifyer(_)] => {CommandSeqState::Uncomplette},
+
+            [Command::Quantifyer(_)] => {CommandSeqState::Uncomplette},
+
+            _ => {println!("BROKEN!");
+                CommandSeqState::Broken}
+
+        }
+        
+    }
+
+    fn NORMAL_appendseq(&mut self, event: Event) {
+    }
+
+    pub fn NORMAL_handle_input<'a>(&mut self, event: Event, cursorpos: &mut usize,
+                                   list_view: &mut ListView, icons: &mut Icons<'a>,
+                                   texturecreator: &'a TextureCreator) {
+        match event {
+ //           Event::KeyDown { keycode: Some(Keycode::Up), ..} => {
+ //               if *cursorpos > 0 {
+ //                   *cursorpos -= 1;
+ //               }
+ //           }
+ //           Event::KeyDown { keycode: Some(Keycode::Down), ..} => {
+ //               if *cursorpos < list_view.len()-1 {
+ //                   *cursorpos += 1;
+ //               }
+ //           }
             Event::KeyDown { keycode: Some(Keycode::Right), ..} => {
                 let node = list_view[*cursorpos].clone();
                 let mut node = node.borrow_mut();
@@ -67,69 +267,100 @@ impl NormalMode {
             Event::KeyDown { keycode: Some(Keycode::Return), ..} => {
             }
 
+            Event::KeyDown{ keycode: Some(k), ..} => {
+                self.keysequence.push(k);
+                if let Some(cseq) = Self::parse_commandsequance(&self.keysequence) {
+                    self.commandseq = cseq;
+                }
+                else {self.commandseq.clear();}
+                dbg!(&self.commandseq);
+                let comseqstate = self.NORMAL_ExecCommanSeq(list_view, cursorpos);
+                match comseqstate {
+                    CommandSeqState::Complette => {
+                        unsafe {
+                            std::ptr::swap( &mut self.executedseq as *mut CommandSeq,
+                                            &mut self.commandseq as *mut CommandSeq);
+                        }
+                        self.keysequence.clear();
+                        self.commandseq.clear();
+                    },
+                    CommandSeqState::Broken => {
+                        self.keysequence.clear();
+                        self.commandseq.clear();
+                    }
+                    CommandSeqState::Uncomplette => {}
+                }
+            }
+
             _ => {}//dbg!("Other event!", event);}
         }
-    return true;
 
     }
 
 }
 
 
-
-pub struct RenameMode {
-
-}
-
-
-pub struct CommandMode{
+pub fn precommand_highlight(commandseq: Vec<Command>, list_view: ListView, pos: usize) {
 
 }
 
-
-
-pub struct VisualMode {
-
-}
-
-
-
-enum Command {
-    Target(fn (list_view: &Vec<FSnode>, cursorpos: usize) -> (usize, usize)),
+pub enum Command {
+    Target{ fun: TargetFun, name: String},
     Quantifyer(usize),
-    Manip(),
-    Targetless,
-
+    Manip{fun: ManipFun, name: String}, //returns the lv location of manipulated directories.
+    Targetless{fun: TargetlessFun, name: String} // -||-
 }
-    
-
-enum Manip {
-    Yankt,
-    Past,
-    SoftDel,
-    Del,
-    Rename,
-    RenameAppend,
-}
-
-enum Target {
-    Up,
-    Down,
-    First,
-    Last,
-    FirstInParrent,
-    LastOfParrent,
-    Parrent,
-
-
-
-
+use std::fmt;
+impl fmt::Debug for Command {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (comtype, cont) = match self {
+            Self::Target{fun: _, name: n} => {("Targ", n.clone())},
+            Self::Targetless{fun: _, name: n} => {("Tless", n.clone())},
+            Self::Manip{fun: _, name: n} => {("Manip", n.clone())},
+            Self::Quantifyer(q) => {("Quant", format!("{}",q))},
+        };
+        f.debug_struct(comtype) 
+            .field("fun", &cont)
+            .finish()
+    }
 }
 
-enum Targetless {
 
-
+enum CommandSeqState {
+    Complette,
+    Uncomplette,
+    Broken,
 }
+
+//enum Manip {
+//    Yankt,
+//    SoftDel,
+//    Del,
+//    Rename,
+//    RenameAppend,
+//}
+//
+//enum Target {
+//    Up,
+//    Down,
+//    First,
+//    Last,
+//    FirstInParrent,
+//    LastInParrent,
+//    Parrent,
+//}
+//
+//enum Targetless {
+//    Past,
+
+
+
+//pub enum Mode {
+//    Normal(NormalMode),
+//    Visual(VisualMode),
+//    Rebane(RenameMode),
+//    Command(Command),
+//}
 
 // NORMAL:
 // fullsequencies :

@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use std::process::Command;
 use xdg_mime::SharedMimeInfo;
 use std::fs::Metadata;
-use crate::fsnodetypes::SdlContainer;
 use sdl2::render::Texture;
+use crate::render::SdlContainer;
 use sdl2::image::{InitFlag, LoadTexture};
 use std::collections::HashMap;
 
@@ -77,10 +77,13 @@ impl<'w> Icons<'w> {
                  .with_scale(1)
                  .with_theme(&self.theme)
                  .with_cache()
-                 .find()
-                 .expect("Can't find icon!");
+                 .find();
             dbg!(&icon);
-            self.load(icon, tc)
+            match icon {
+                Some(icon) => {self.load(icon, tc)},
+                None => {1} // TODO: Preload a generic file icon!
+            }
+            
             });
         *iconid
     }
