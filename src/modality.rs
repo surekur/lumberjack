@@ -8,6 +8,7 @@ use crate::TextureCreator;
 use crate::config::*;
 use crate::commands;
 use crate::commands::{ManipFun, TargetFun, TargetlessFun};
+use std::path::PathBuf;
 
 pub type CommandSeq = Vec<Command>;
 //pub type ModeInputHandler = 
@@ -20,7 +21,7 @@ pub struct Mode<'a> {
     pub commandseq: Vec<Command>,
     pub executedseq: Vec<Command>,
     pub handle_input: fn(&mut Self , Event, cursorpos: &mut usize,
-                         &mut ListView, &mut Icons<'a>, &'a TextureCreator),
+                         &mut ListView, &mut Icons<'a>, &'a TextureCreator, &mut Vec<PathBuf>),
 }
 impl Mode<'_> {
     pub fn normal() -> Self {
@@ -237,12 +238,11 @@ impl Mode<'_> {
         
     }
 
-    fn NORMAL_appendseq(&mut self, event: Event) {
-    }
 
     pub fn NORMAL_handle_input<'a>(&mut self, event: Event, cursorpos: &mut usize,
                                    list_view: &mut ListView, icons: &mut Icons<'a>,
-                                   texturecreator: &'a TextureCreator) {
+                                   texturecreator: &'a TextureCreator, 
+                                   openeddirs: &mut Vec<PathBuf>) {
         match event {
  //           Event::KeyDown { keycode: Some(Keycode::Up), ..} => {
  //               if *cursorpos > 0 {
@@ -256,13 +256,15 @@ impl Mode<'_> {
  //           }
             Event::KeyDown { keycode: Some(Keycode::Right), ..} => {
                 let node = list_view[*cursorpos].clone();
-                let mut node = node.borrow_mut();
-                node.open(list_view, *cursorpos, &texturecreator , icons);
+                {let mut node = node.borrow_mut();
+                node.open(list_view, *cursorpos, &texturecreator , icons);}
+                //node = unsafe {node.borrow()
+                //if let FSnode::DirLike(n) = **node {openeddirs.push(n.path);}// TODO Remove
             }
             Event::KeyDown { keycode: Some(Keycode::Left), ..} => {
                 let node = list_view[*cursorpos].clone();
-                let mut node = node.borrow_mut();
-                node.close(list_view, *cursorpos);
+                {let mut node = node.borrow_mut();
+                node.close(list_view, *cursorpos);}
             }
             Event::KeyDown { keycode: Some(Keycode::Return), ..} => {
             }

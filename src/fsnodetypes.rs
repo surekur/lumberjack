@@ -15,7 +15,7 @@ use std::rc::Rc;
 use sdl2::gfx::primitives::DrawRenderer;
 use std::env;
 //use iconhandler::Icons;
-use crate::iconhandler::TC;
+use crate::iconhandler::TexCre;
 use crate::iconhandler::Icons;
 use crate::config::*;
 
@@ -25,7 +25,7 @@ pub type ListView = Vec<Rc<RefCell<FSnode>>>;
 pub trait Manipulate {
     fn update(&mut self, _list_view: &mut ListView, _pos: usize) {}
     fn close(&mut self, _list_view: &mut ListView, _pos: usize) {}
-    fn open<'w>(&mut self, _list_view: &mut ListView, _pos: usize, _tc: &'w TC, _iconhandler: &mut Icons<'w>) {}
+    fn open<'w>(&mut self, _list_view: &mut ListView, _pos: usize, _tc: &'w TexCre, _iconhandler: &mut Icons<'w>) {}
     fn get_indent(&self) -> i32 {0}
     //-------------------------------------------------------------------------------------------------
     fn get_name(&self) -> &str {
@@ -101,7 +101,7 @@ impl Manipulate for FSnode {
         }
     }
 
-    fn open<'w>(&mut self, list_view: &mut ListView, pos: usize, tc: &'w TC, iconhandler: &mut Icons<'w>) {
+    fn open<'w>(&mut self, list_view: &mut ListView, pos: usize, tc: &'w TexCre, iconhandler: &mut Icons<'w>) {
         match self {
             Self::DirLike(d) => {if !d.opened {d.open(list_view, pos, tc, iconhandler)}},
             Self::Leaf(f) => {println!("File Open")}, // TODO implement XDG open
@@ -112,7 +112,7 @@ impl Manipulate for FSnode {
 #[derive(Debug)]
 pub struct DirLike {
     pub name: String,
-    pub path: String,
+    pub path: PathBuf,
     pub icon: usize,
     //parrent: Option<&'p DirLike<'p,'p>>, // TODO: Use RefCell, Reference counter etc...
     pub meta: Metadata,
@@ -151,7 +151,7 @@ impl Manipulate for DirLike {
         self.opened = false;
     }
 
-    fn open<'w>(&mut self, list_view: &mut ListView, pos: usize, tc: &'w TC, iconhandler: &mut Icons<'w>) {
+    fn open<'w>(&mut self, list_view: &mut ListView, pos: usize, tc: &'w TexCre, iconhandler: &mut Icons<'w>) {
         self.opened = true; //TODO IMPORTANT investigate: why the opened = true
                             //  not working sometimes if it is on the end of the
                             //  function!
@@ -166,7 +166,7 @@ impl Manipulate for DirLike {
                     name: file.file_name()
                         .into_string()
                         .unwrap(), // TODO If filename isn't utf-8 encoded, then we panic, is it ok?
-                    path: path,
+                    path: file.path(),
                     icon: icon,
                     meta: meta,
                     //parrent: Some(& self),

@@ -9,14 +9,14 @@ use crate::render::SdlContainer;
 use sdl2::image::{InitFlag, LoadTexture};
 use std::collections::HashMap;
 
-pub type TC = sdl2::render::TextureCreator<sdl2::video::WindowContext>;
+pub type TexCre = sdl2::render::TextureCreator<sdl2::video::WindowContext>;
 
 //#[derive(Debug)]
 pub struct Icons<'w> {
     pub theme: String,
     mimedb: SharedMimeInfo,
     pub loaded: Vec<Texture<'w>>,
-    //texturecreator: TC,
+    //texturecreator: TexCre,
     mimesloaded: HashMap<String, usize>,
     //strorage: HashMap<String, >
 }
@@ -57,7 +57,7 @@ impl<'w> Icons<'w> {
         .to_owned()
     }
 
-    pub fn get_icon(&mut self, path: &Path, meta: &Metadata, tc: &'w TC) -> usize {
+    pub fn get_icon(&mut self, path: &Path, meta: &Metadata, tc: &'w TexCre) -> usize {
         let guess = self.mimedb.guess_mime_type()
             .path(path)
             //.metadata(meta)
@@ -89,7 +89,7 @@ impl<'w> Icons<'w> {
     }
 
 
-    fn load(&mut self, filename:  PathBuf, tc: &'w TC) -> usize {
+    fn load(&mut self, filename:  PathBuf, tc: &'w TexCre) -> usize {
         let texture = tc.load_texture(&filename)
             .expect("Can't load icon.");
         self.loaded.push(texture);

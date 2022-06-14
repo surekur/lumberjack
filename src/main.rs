@@ -8,7 +8,7 @@ use sdl2::keyboard::Keycode;
 
 use std::os::unix;
 use fs::Metadata;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::fs;
 
 use std::cell::RefCell;
@@ -17,7 +17,7 @@ use sdl2::gfx::primitives::DrawRenderer;
 use std::env;
 use iconhandler::Icons;
 use crate::fsnodetypes::{FSnode, DirLike, Leaf, Manipulate, ListView};
-use crate::iconhandler::TC;
+use crate::iconhandler::TexCre;
 use crate::modality::{Mode};
 use crate::config::*;
 use crate::render::*;
@@ -32,6 +32,20 @@ mod render;
 
 struct BumpEvent {}
 
+fn update_dirs(list_view: &ListView, glob: GlobalState) {
+    
+}
+
+type PosList = Vec<usize>;
+
+struct GlobalState {
+    pub viewpos: usize,
+    pub cursorpos: usize,
+    pub winsize: (u32, u32),
+    pub selection: PosList,
+    pub openeddirs: Vec<PathBuf>,
+    pub mousepos: usize,
+}
 
 fn mouse_pos_as_list_index(mousepos: (i32, i32), list_view: &ListView,
                            viewpos: usize, winsize: (u32, u32)) -> Option<usize> {
@@ -85,7 +99,7 @@ fn main() {
 
     // Globalstate
     let mut root_node = FSnode::DirLike(DirLike {name: String::from(""),
-                                                path: String::from(root_path),
+                                                path: PathBuf::from(root_path),
                                                 indent: -1,
                                                 meta: fs::metadata(root_path).unwrap(),
                                                 opened: false,
@@ -96,7 +110,15 @@ fn main() {
     let mut cursorpos = 0;
     let mut viewpos = 0;
     let mut mode = Mode::normal();
-    let selection: Vec<isize>;
+    let mut openeddirs: Vec<PathBuf> = Vec::new();
+    let mut glob = GlobalState {
+        cursorpos: 0,
+        viewpos: 0,
+        selection: Vec::new(),
+        winsize: sdl.canvas.window().drawable_size(),
+        openeddirs: Vec::new(),
+        mousepos: usize::MAX,
+    };
 
     loop { //MAIN LOOP //////////////
 
@@ -126,7 +148,7 @@ fn main() {
             },
             _ => {
                 (mode.handle_input)(&mut mode, event, &mut cursorpos, &mut list_view,
-                                            &mut icons, &texturecreator);
+                                            &mut icons, &texturecreator, &mut openeddirs);
             }
         }
         
