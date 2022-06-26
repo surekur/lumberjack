@@ -166,8 +166,8 @@ fn main() {
     //  TEST!
     tree.children[2].open();    
     // TEST ENDS
-    let mut viewpos = 0;
-    let mut cursorpos = 0;
+    let mut glob.viewpos = 0;
+    let mut glob.cursorpos = 0;
     //open_dir(root, &mut listview);
     let mut event_pump = sdl.context.event_pump().unwrap();
     'mainloop : loop {

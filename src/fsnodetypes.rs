@@ -4,6 +4,7 @@ use sdl2::rect::Rect;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 //use sdl2::render::WindowCanvas;
+use crate::GlobalState;
 
 use std::os::unix;
 use fs::Metadata;
@@ -18,19 +19,19 @@ use std::env;
 use crate::iconhandler::TexCre;
 use crate::iconhandler::Icons;
 use crate::config::*;
-
+use std::cmp::Ordering;
 
 pub type ListView = Vec<Rc<RefCell<FSnode>>>;
+pub type PackedFSnode = Rc<RefCell<FSnode>>;
 
 pub trait Manipulate {
-    fn update(&mut self, _list_view: &mut ListView, _pos: usize) {}
+    fn update<'w>(&mut self, _pos: usize, _list_view: &mut ListView,
+              _tc: &'w TexCre, _iconhandler: &mut Icons<'w>) {}
     fn close(&mut self, _list_view: &mut ListView, _pos: usize) {}
     fn open<'w>(&mut self, _list_view: &mut ListView, _pos: usize, _tc: &'w TexCre, _iconhandler: &mut Icons<'w>) {}
     fn get_indent(&self) -> i32 {0}
-    //-------------------------------------------------------------------------------------------------
-    fn get_name(&self) -> &str {
-        ""
-    }
+    //-----------------------------------------------------------------
+    fn get_name(&self) -> &str {""}
 
     fn get_path(&self, list_view: &ListView, pos: usize) -> Option<PathBuf> {
         Some(PathBuf::new())
@@ -49,11 +50,11 @@ pub trait Manipulate {
         }
     }
 
-    fn on_click<'w>(&mut self, cursorpos: &mut usize, list_view: &mut ListView, event: Event,
+    fn on_click<'w>(&mut self, glob:  &mut GlobalState, list_view: &mut ListView, event: Event,
                 undermouse: usize, tc: &'w TextureCreator, iconhandler: &mut Icons<'w> ) {
         if let Event::MouseButtonDown{x, y, clicks, ..} = event {
             if clicks == 1 {
-                *cursorpos = undermouse;
+                glob.cursorpos = undermouse;
             }
             else if clicks == 2 {
                 self.open(list_view, undermouse, tc, iconhandler);
@@ -74,10 +75,11 @@ impl FSnode {
 
 }
 impl Manipulate for FSnode {
-    fn update(&mut self, list_view: &mut ListView, pos: usize) {
+    fn update<'w>(&mut self, pos: usize, list_view: &mut ListView,
+              tc: &'w TexCre, iconhandler: &mut Icons<'w>) {
         match self {
-            Self::DirLike(d) => {d.update(list_view, pos)},
-            Self::Leaf(f) => {f.update(list_view, pos)},
+            Self::DirLike(d) => {d.update(pos, list_view, tc, iconhandler)},
+            Self::Leaf(f) => {f.update(pos, list_view, tc, iconhandler)},
         }
     }
     fn get_name(&self) -> &str {
@@ -124,7 +126,6 @@ impl DirLike {
 }
 impl Manipulate for DirLike {
     fn get_name(&self) -> &str {&self.name}
-
     fn get_indent(&self) -> i32 {self.indent}
 
     fn close(&mut self, list_view: &mut Vec<Rc<RefCell<FSnode>>>, pos: usize) {
@@ -140,22 +141,21 @@ impl Manipulate for DirLike {
             }
             if !is_breaked {
                 end = list_view.len();
-                dbg!(!is_breaked, end);
             }
             else {
                 //length += pos+1;
             }
-            dbg!(pos+1..end);
             list_view.drain(pos+1..end);
         }
         self.opened = false;
     }
 
     fn open<'w>(&mut self, list_view: &mut ListView, pos: usize, tc: &'w TexCre, iconhandler: &mut Icons<'w>) {
-        self.opened = true; //TODO IMPORTANT investigate: why the opened = true
-                            //  not working sometimes if it is on the end of the
-                            //  function!
-        for file in fs::read_dir(&self.path).unwrap() {
+        // TODO Handle fails properly!
+        let dirread = fs::read_dir(&self.path).unwrap();
+
+        let mut children = Vec::with_capacity(200); // TODO get somehow de size of the dir
+        for file in dirread {
             let file = file.unwrap();
             let meta = file.metadata().unwrap();
             let path = file.path().into_os_string().into_string().unwrap();
@@ -176,7 +176,6 @@ impl Manipulate for DirLike {
                 })
             }
             else {
-                
                 FSnode::Leaf(Leaf{
                     name: file.file_name().into_string().unwrap(),
                     path: path,
@@ -186,15 +185,42 @@ impl Manipulate for DirLike {
                 })
             };
             let node = Rc::new(RefCell::new(node));
-            if pos+1 < list_view.len() {
-                list_view.insert(pos+1, node);
-                // TODO future Gergo will optimize this
-                // so dont need to shift da shit for every single insertion but insert once!
-            } else {
-                list_view.push(node);
+          //  if pos+1 < list_view.len() {
+          //      list_view.insert(pos+1, node);
+          //      // TODO future Gergo will optimize this
+          //      // so dont need to shift da shit for every single insertion but insert once!
+          //  } else {
+          //      list_view.push(node);
+          //  }
+            children.push(node);
+        }
+        children.sort_by(orderer);
+        if !children.is_empty() {
+            if list_view.is_empty() {
+                std::mem::swap(list_view, &mut children);
+            }
+            // adding a dummynode...
+            else {
+                if pos+1 < list_view.len() {
+                    list_view.insert(pos+1, children[0].clone());
+                }
+                else {
+                    list_view.push(children[0].clone());
+                }
+                dbg!(pos+1..=pos+1);
+                    list_view.splice(pos+1..=pos+1, children);
             }
         }
         self.opened = true;
+    }
+
+    fn update<'w>(&mut self, pos: usize, list_view: &mut ListView,
+              tc: &'w TexCre, iconhandler: &mut Icons<'w>) {
+        // TODO It is extremly inefective this way.
+        self.close(list_view, pos);
+        self.open(list_view, pos, tc, iconhandler);
+        // TODO opened dirs inside shoud be still opened.
+
     }
 }
 
@@ -220,6 +246,30 @@ pub struct Thumbnailable {
     pub meta: Metadata,
     //thumbnail: 
     pub indent: i32,
+}
+
+// TODO Order by different fields?
+fn orderer(first: &PackedFSnode, second: &PackedFSnode) -> Ordering {
+    let first = &*first.borrow();
+    let second = &*second.borrow();
+    let (firstname, firstisdir) = match first {
+        FSnode::DirLike(f) => {(&f.name, true)},
+        FSnode::Leaf(f) => {(&f.name, false)},
+    };
+    match second {
+        FSnode::DirLike(f) => {
+            if !firstisdir {
+                return Ordering::Greater;
+            }
+            return firstname.cmp(&f.name);
+        },
+        FSnode::Leaf(f) => {
+            if firstisdir {
+                return Ordering::Less;
+            }
+            return firstname.cmp(&f.name);
+        },
+    }
 }
 
 

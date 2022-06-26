@@ -9,6 +9,7 @@ use crate::config::*;
 use crate::commands;
 use crate::commands::{ManipFun, TargetFun, TargetlessFun};
 use std::path::PathBuf;
+use crate::GlobalState;
 
 pub type CommandSeq = Vec<Command>;
 //pub type ModeInputHandler = 
@@ -20,8 +21,8 @@ pub struct Mode<'a> {
     pub keysequence: Vec<Keycode>,
     pub commandseq: Vec<Command>,
     pub executedseq: Vec<Command>,
-    pub handle_input: fn(&mut Self , Event, cursorpos: &mut usize,
-                         &mut ListView, &mut Icons<'a>, &'a TextureCreator, &mut Vec<PathBuf>),
+    pub handle_input: fn(&mut Self , Event, glob:  &mut GlobalState,
+                         &mut ListView, &mut Icons<'a>, &'a TextureCreator),
 }
 impl Mode<'_> {
     pub fn normal() -> Self {
@@ -30,7 +31,7 @@ impl Mode<'_> {
             color: Color::GREY,
             fgcolor: BG0,
             keysequence: Vec::new(),// TODO Made them arrays instead of vecs(?)
-            commandseq: Vec::new(),
+            commandseq: Vec::new(), // or arrays with size
             executedseq: Vec::new(),
             handle_input: Mode::NORMAL_handle_input,
         }
@@ -140,9 +141,8 @@ impl Mode<'_> {
         Some(commandseq)
     }
 
-    fn NORMAL_ExecCommanSeq(&self,mut list_view: &mut ListView,
-                            cursorpos: &mut usize) -> CommandSeqState {
-        println!("Exec()");
+    fn NORMAL_exec_command_seq(&self, mut list_view: &mut ListView,
+                            glob:  &mut GlobalState) -> CommandSeqState {
         match self.commandseq[..] {
             // Complette:
             // TG
@@ -153,8 +153,8 @@ impl Mode<'_> {
             // Tl
             // Qn Tl
             [Command::Target{name: _, fun: tg}] => {
-                match tg(list_view, *cursorpos) {
-                    Some(t) => {*cursorpos = t;},
+                match tg(list_view, glob.cursorpos) {
+                    Some(t) => {glob.cursorpos = t;},
                     None => {}
                 }
                 CommandSeqState::Complette
@@ -162,25 +162,25 @@ impl Mode<'_> {
 
             [Command::Quantifyer(qf),
             Command::Target{name: _, fun: tg}] => {
-                let mut target = *cursorpos;
+                let mut target = glob.cursorpos;
                 for _ in 0..qf {
                     if let Some(t) = tg(list_view, target) {
                         target = t;
                     }
                 }
-                *cursorpos = target;
+                glob.cursorpos = target;
                 CommandSeqState::Complette
             },
 
             [Command::Manip{name: _, fun: mn},
             Command::Target{name: _, fun: tg}] => {
-                let mut target = *cursorpos;
-                if let Some(t) = tg(list_view, *cursorpos) {
+                let mut target = glob.cursorpos;
+                if let Some(t) = tg(list_view, glob.cursorpos) {
                     target = t;
                 }
                 let (start, end) =
-                    if *cursorpos < target {(*cursorpos, target)}
-                    else                    {(target, *cursorpos)};
+                    if glob.cursorpos < target {(glob.cursorpos, target)}
+                    else                    {(target, glob.cursorpos)};
                // for i in start..=end {
                //     mn();
                // }
@@ -191,15 +191,15 @@ impl Mode<'_> {
             [Command::Manip{name: _, fun: mn},
             Command::Quantifyer(qf),
             Command::Target{name: _, fun: tg}] => {
-                let mut target = *cursorpos;
+                let mut target = glob.cursorpos;
                 for _ in 0..qf {
                     if let Some(t) = tg(list_view, target) {
                         target = t;
                     }
                 }
                 let (start, end) =
-                    if *cursorpos < target {(*cursorpos, target)}
-                    else                    {(target, *cursorpos)};
+                    if glob.cursorpos < target {(glob.cursorpos, target)}
+                    else                    {(target, glob.cursorpos)};
                 mn((start..=end).collect() , &mut list_view);
                 CommandSeqState::Complette
             },
@@ -207,64 +207,66 @@ impl Mode<'_> {
             [Command::Manip{name: _, fun: mn},
             Command::Manip{name: _, fun: mn2}]
                     if mn as *const ManipFun == mn2 as *const ManipFun => {
-                        mn(vec![*cursorpos], &mut list_view); 
+                        mn(vec![glob.cursorpos], &mut list_view); 
                         CommandSeqState::Complette
                 },
             
             [Command::Targetless{name: _, fun: tl}] => {
-                tl(&mut list_view, *cursorpos);
-                CommandSeqState::Complette},
+                tl(&mut list_view, glob.cursorpos);
+                CommandSeqState::Complette
+            },
 
             [Command::Quantifyer(qf),
             Command::Targetless{name: _, fun: tl}] => {
                 for _ in 0..=qf {
-                    tl(&mut list_view, *cursorpos);
+                    tl(&mut list_view, glob.cursorpos);
                 }
                 CommandSeqState::Complette
-            }
+            },
 
             // Uncomplette:
-            [Command::Manip{name: _, fun: _}] => {CommandSeqState::Uncomplette},
+            [Command::Manip{name: _, fun: _}] => {CommandSeqState::Uncomplette
+            },
 
             [Command::Manip{name: _, fun: _},
-            Command::Quantifyer(_)] => {CommandSeqState::Uncomplette},
+            Command::Quantifyer(_)] => {CommandSeqState::Uncomplette
+            },
 
-            [Command::Quantifyer(_)] => {CommandSeqState::Uncomplette},
+            [Command::Quantifyer(_)] => {CommandSeqState::Uncomplette
+            },
 
-            _ => {println!("BROKEN!");
-                CommandSeqState::Broken}
+            _ => {
+                CommandSeqState::Broken
+            }
 
         }
         
     }
 
 
-    pub fn NORMAL_handle_input<'a>(&mut self, event: Event, cursorpos: &mut usize,
+    pub fn NORMAL_handle_input<'a>(&mut self, event: Event, glob:  &mut GlobalState,
                                    list_view: &mut ListView, icons: &mut Icons<'a>,
-                                   texturecreator: &'a TextureCreator, 
-                                   openeddirs: &mut Vec<PathBuf>) {
+                                   texturecreator: &'a TextureCreator) {
         match event {
  //           Event::KeyDown { keycode: Some(Keycode::Up), ..} => {
- //               if *cursorpos > 0 {
- //                   *cursorpos -= 1;
+ //               if glob.cursorpos > 0 {
+ //                   glob.cursorpos -= 1;
  //               }
  //           }
  //           Event::KeyDown { keycode: Some(Keycode::Down), ..} => {
- //               if *cursorpos < list_view.len()-1 {
- //                   *cursorpos += 1;
+ //               if glob.cursorpos < list_view.len()-1 {
+ //                   glob.cursorpos += 1;
  //               }
  //           }
             Event::KeyDown { keycode: Some(Keycode::Right), ..} => {
-                let node = list_view[*cursorpos].clone();
+                let node = list_view[glob.cursorpos].clone();
                 {let mut node = node.borrow_mut();
-                node.open(list_view, *cursorpos, &texturecreator , icons);}
-                //node = unsafe {node.borrow()
-                //if let FSnode::DirLike(n) = **node {openeddirs.push(n.path);}// TODO Remove
+                node.open(list_view, glob.cursorpos, &texturecreator , icons);}
             }
             Event::KeyDown { keycode: Some(Keycode::Left), ..} => {
-                let node = list_view[*cursorpos].clone();
+                let node = list_view[glob.cursorpos].clone();
                 {let mut node = node.borrow_mut();
-                node.close(list_view, *cursorpos);}
+                node.close(list_view, glob.cursorpos);}
             }
             Event::KeyDown { keycode: Some(Keycode::Return), ..} => {
             }
@@ -275,8 +277,7 @@ impl Mode<'_> {
                     self.commandseq = cseq;
                 }
                 else {self.commandseq.clear();}
-                dbg!(&self.commandseq);
-                let comseqstate = self.NORMAL_ExecCommanSeq(list_view, cursorpos);
+                let comseqstate = self.NORMAL_exec_command_seq(list_view, glob);
                 match comseqstate {
                     CommandSeqState::Complette => {
                         unsafe {

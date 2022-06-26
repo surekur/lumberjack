@@ -7,6 +7,7 @@ use sdl2::rect::Rect;
 use sdl2::ttf::Font;
 use sdl2::pixels::Color;
 use sdl2::gfx::primitives::DrawRenderer;
+use crate::GlobalState;
 
 pub struct SdlContainer {
    pub canvas: sdl2::render::WindowCanvas,
@@ -45,7 +46,7 @@ pub fn draw_linecounter(height: u32, number: usize, pos: i32,
     sdl.draw_txt(&text[..], (posx as i32, pos), font, LINECOUNTER_FG);
 }
 
-pub fn draw_minimap(list_view: & ListView, viewpos: usize, lastvisible: usize,
+pub fn draw_minimap(list_view: & ListView, glob: &mut GlobalState, lastvisible: usize,
                 sdl: &mut SdlContainer, height: u32, width: u32) {
     let winsize = sdl.canvas.window().drawable_size();
     let xpos = winsize.0 as i32 - width as i32;
@@ -54,7 +55,7 @@ pub fn draw_minimap(list_view: & ListView, viewpos: usize, lastvisible: usize,
     // TODO: Transparent bg?
     let mut pos: i32 = 2;
     for (i, entry) in list_view.iter().enumerate() {
-        if viewpos <=  i && i < lastvisible {
+        if glob.viewpos <=  i && i < lastvisible {
             sdl.canvas.set_draw_color(MINIMAP_FG_VIEWPORT);
         }
         else {
@@ -71,7 +72,7 @@ pub fn draw_minimap(list_view: & ListView, viewpos: usize, lastvisible: usize,
     }
 }
 
-pub fn draw_statusbar(top: i32, cursorpos: usize, list_view: &mut ListView,
+pub fn draw_statusbar(top: i32, glob:  &mut GlobalState, list_view: &mut ListView,
                   mode: &mut Mode, sdl: &mut SdlContainer, font: &Font) {
     let winsize = sdl.canvas.window().drawable_size();
     let contenttop = winsize.1 as i32 - 20;
@@ -98,7 +99,6 @@ pub fn draw_statusbar(top: i32, cursorpos: usize, list_view: &mut ListView,
     }
     else { 
         println!("ELSE!");
-        dbg!(pos, top, winsize.1, height);
         sdl.canvas.filled_trigon(
             pos as i16, top as i16,  (pos+10) as i16, (top+(height as i32/2)) as i16,
             pos as i16, winsize.1 as i16,

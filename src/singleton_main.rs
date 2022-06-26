@@ -73,7 +73,7 @@ struct FSnode {
 
 struct LumberJack<'a> {
     list_view: Vec<FSnode>,
-    cursorpos: i64,
+    glob.cursorpos: i64,
     sdl: SdlContainer<'a>,
   //  texture_creator: , //sdl::render::
 }
@@ -159,7 +159,7 @@ fn main() {
    // let texture_creator = canvas.texture_creator();
     let mut lumberjack = LumberJack {
         sdl: SdlContainer::new(),
-        cursorpos: 0,
+        glob.cursorpos: 0,
         list_view: vec![],
        // texture_creator: texture_creator,
     };

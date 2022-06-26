@@ -63,14 +63,12 @@ impl<'w> Icons<'w> {
             //.metadata(meta)
             .guess();
         let mime = guess.mime_type();
-        dbg!(&mime);
         let mimesloaded = &mut self.mimesloaded as *mut HashMap<String, usize>; 
         let mimesloaded = unsafe {&mut *mimesloaded};
         let iconid = mimesloaded.entry(mime.to_string())
             .or_insert({
             
             let icon = self.mimedb.lookup_icon_names(guess.mime_type());
-            dbg!(&icon);
             //(&icon[0]).to_owned()
             let icon  = lookup(&icon[0])
                  .with_size(16)
@@ -78,7 +76,6 @@ impl<'w> Icons<'w> {
                  .with_theme(&self.theme)
                  .with_cache()
                  .find();
-            dbg!(&icon);
             match icon {
                 Some(icon) => {self.load(icon, tc)},
                 None => {1} // TODO: Preload a generic file icon!

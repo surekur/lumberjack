@@ -4,6 +4,7 @@ use sdl2::rect::Rect;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 //use sdl2::render::WindowCanvas;
+use std::time::SystemTime;
 
 
 use std::os::unix;
@@ -32,20 +33,69 @@ mod render;
 
 struct BumpEvent {}
 
-fn update_dirs(list_view: &ListView, glob: GlobalState) {
-    
+fn pos_from_path(path: &PathBuf, list_view: &ListView) -> Option<isize> {
+    let mut pos = 0;
+    let mut indent = 0;
+    for name in path.iter() {
+        if let Some(name) = name.to_str(){
+            if let Some(foundpos) = find_in_dir(&name, list_view, pos, indent+1) {
+                pos = foundpos;
+                indent = list_view[pos].borrow().get_indent();
+            }
+            else {return None}
+        }
+        else {return None}
+    }
+    None
+}
+
+
+fn find_in_dir(name: &str, list_view: &ListView,
+               firstchildpos: usize, indent: i32) -> Option<usize> {
+    for (pos, node) in list_view[firstchildpos..].iter().enumerate() {
+        if node.borrow().get_indent() > indent {
+            continue;
+        }
+        if node.borrow().get_indent() < indent {
+            break;
+        }
+        if node.borrow().get_name() == name {
+            return Some(pos);
+        }
+    }
+    None
+}
+
+fn update_dirs<'w>(list_view: &mut ListView, glob: &GlobalState, tc: &'w TexCre, iconhandler: &mut Icons<'w>) {
+    for (path, lasttime) in glob.openeddirs[..].iter() {
+        let modified = fs::metadata(&path)
+            .expect("Error: There is a path in openeddirs, which metadata unaccessible.")
+            .modified()
+            .unwrap();
+        if modified != *lasttime {
+            let pos = pos_from_path(&path, list_view)
+                .expect("Error: There is a path in openeddirs, that arent in list_view");
+            let node = list_view[pos as usize].clone();
+            let mut node = node.borrow_mut();
+            node.update(pos as usize, list_view, tc, iconhandler);
+
+        }
+        
+    }
 }
 
 type PosList = Vec<usize>;
 
-struct GlobalState {
+pub struct GlobalState {
     pub viewpos: usize,
     pub cursorpos: usize,
     pub winsize: (u32, u32),
     pub selection: PosList,
-    pub openeddirs: Vec<PathBuf>,
+    pub openeddirs: Vec<(PathBuf, SystemTime)>,
     pub mousepos: usize,
 }
+
+
 
 fn mouse_pos_as_list_index(mousepos: (i32, i32), list_view: &ListView,
                            viewpos: usize, winsize: (u32, u32)) -> Option<usize> {
@@ -107,10 +157,10 @@ fn main() {
     });
     let mut list_view: ListView = Vec::new();
     root_node.open(&mut list_view, 0, &texturecreator, &mut icons);
-    let mut cursorpos = 0;
-    let mut viewpos = 0;
+ //   let mut cursorpos = 0;
+ //   let mut viewpos = 0;
     let mut mode = Mode::normal();
-    let mut openeddirs: Vec<PathBuf> = Vec::new();
+ //   let mut openeddirs: Vec<PathBuf> = Vec::new();
     let mut glob = GlobalState {
         cursorpos: 0,
         viewpos: 0,
@@ -128,17 +178,17 @@ fn main() {
         let winsize = sdl.canvas.window().drawable_size();
         match event {
             Event::MouseMotion{x, y, ..} => {
-                if let Some(mp) = mouse_pos_as_list_index((x, y), &list_view, viewpos,
+                if let Some(mp) = mouse_pos_as_list_index((x, y), &list_view, glob.viewpos,
                 winsize) {
                     mousepos = mp;
                 }
             },
             Event::MouseButtonDown{x, y, ..} => {
-                if let Some(mp) = mouse_pos_as_list_index((x, y), &list_view, viewpos,
+                if let Some(mp) = mouse_pos_as_list_index((x, y), &list_view, glob.viewpos,
                 winsize) {
                     let node = list_view[mp].clone();
                     let mut node = node.borrow_mut();
-                    node.on_click(&mut cursorpos , &mut list_view, event, mp, 
+                    node.on_click(&mut glob, &mut list_view, event, mp, 
                                   &texturecreator, &mut icons);
                 }
             },
@@ -147,8 +197,8 @@ fn main() {
                 mode = Mode::normal();
             },
             _ => {
-                (mode.handle_input)(&mut mode, event, &mut cursorpos, &mut list_view,
-                                            &mut icons, &texturecreator, &mut openeddirs);
+                (mode.handle_input)(&mut mode, event, &mut glob, &mut list_view,
+                                            &mut icons, &texturecreator);
             }
         }
         
@@ -157,11 +207,11 @@ fn main() {
         sdl.canvas.clear();
         let mut pos = 0;
         let mut iseven = false;
-        let mut lastvisible = viewpos;
+        let mut lastvisible = glob.viewpos;
         let mut breaked = false;
-        for (i, entry) in list_view[viewpos..].iter().enumerate() {
+        for (i, entry) in list_view[glob.viewpos..].iter().enumerate() {
             let entry = entry.borrow_mut();
-            let list_index = i + viewpos;
+            let list_index = i + glob.viewpos;
             let height = entry.get_height();
             lastvisible += 1;
             if pos + height > (sdl.canvas.window().drawable_size().1 as i32 - 20) {
@@ -169,7 +219,7 @@ fn main() {
                 breaked = true;
                 break;
             }
-            if list_index == cursorpos {
+            if list_index == glob.cursorpos {
                 sdl.canvas.set_draw_color(CURSOR_COLOR);
             }
             else if list_index == mousepos {
@@ -186,14 +236,14 @@ fn main() {
                         LINECOUNTERWIDTH as i32, pos,
                         sdl.canvas.window().drawable_size().0,
                         entry.get_height() as u32))).ok();
-            let distancefromcursor = if list_index == cursorpos {
+            let distancefromcursor = if list_index == glob.cursorpos {
                 0
             }
-            else if list_index > cursorpos {
-                list_index - cursorpos
+            else if list_index > glob.cursorpos {
+                list_index - glob.cursorpos
             }
             else {
-                cursorpos - list_index
+                glob.cursorpos - list_index
             };
             draw_linecounter(height as u32, distancefromcursor, pos, &mut sdl, &font, iseven);
             pos = entry.draw(&mut sdl, &font, (LINECOUNTERWIDTH as i32, pos), &icons);
@@ -206,16 +256,16 @@ fn main() {
                                                winsize.0, statusbarpos - pos as u32)).ok();
                 pos = statusbarpos as i32;
         }
-        draw_statusbar(pos, cursorpos, &mut list_view, &mut mode, &mut sdl, &font);
-        draw_minimap(&list_view, viewpos, lastvisible, &mut sdl, pos as u32, 40);
+        draw_statusbar(pos, &mut glob, &mut list_view, &mut mode, &mut sdl, &font);
+        draw_minimap(&list_view, &mut glob, lastvisible, &mut sdl, pos as u32, 40);
         sdl.canvas.present();
-        if breaked && (lastvisible < cursorpos+1) {
-            viewpos += 1;
+        if breaked && (lastvisible < glob.cursorpos+1) {
+            glob.viewpos += 1;
             sdl.event_sender.push_custom_event(BumpEvent {})
                 .ok();
         }
-        if viewpos > cursorpos {
-            viewpos -= 1;
+        if glob.viewpos > glob.cursorpos {
+            glob.viewpos -= 1;
             sdl.event_sender.push_custom_event(BumpEvent {})
                 .ok();
         }
